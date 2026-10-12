@@ -1,18 +1,152 @@
-:root {
-  /* Dark theme variables */
-  --bg-primary: #121212;
-  --bg-secondary: #1e1e1e;
-  --bg-tertiary: #2d2d2d;
-  --text-primary: #e0e0e0;
-  --text-secondary: #a0a0a0;
-  --accent-color: #4285F4;
-  --accent-hover: #3367D6;
-  --border-color: #333;
-  --input-bg: #2d2d2d;
-  --input-border: #444;
-  --input-focus-border: #4285F4;
-  --shadow-color: rgba(0, 0, 0, 0.3);
-  --success-color: #4CAF50;
-  --warning-color: #FF9800;
-  --error-color: #F44336;
+/* ============================================================================
+   theme.css — Design token system
+   Modern stack: OKLCH colors, @property, color-mix, semantic aliases.
+   Dark is the default; [data-theme="light"] (set before paint by the inline
+   script in index.html) overrides the semantic aliases only.
+   ========================================================================== */
+
+@property --bg-grid-opacity {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.045;
+}
+
+@layer tokens {
+  :root {
+    color-scheme: dark;
+
+    /* ---- Typography ---- */
+    --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system,
+      'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+      monospace;
+
+    /* ---- Surfaces ---- */
+    --bg: oklch(0.15 0.016 264);
+    --bg-elevated: oklch(0.19 0.018 264);
+    --surface: oklch(0.215 0.019 264);
+    --surface-2: oklch(0.25 0.02 264);
+    --surface-3: oklch(0.295 0.021 264);
+    --glass: color-mix(in oklch, var(--bg-elevated) 76%, transparent);
+
+    /* ---- Text ---- */
+    --text: oklch(0.96 0.008 264);
+    --text-2: oklch(0.78 0.014 264);
+    --text-3: oklch(0.62 0.015 264);
+
+    /* ---- Lines ---- */
+    --border: color-mix(in oklch, white 10%, transparent);
+    --border-strong: color-mix(in oklch, white 17%, transparent);
+
+    /* ---- Brand & semantics ---- */
+    --brand: oklch(0.79 0.15 75);
+    --brand-strong: oklch(0.7 0.15 68);
+    --brand-ink: oklch(0.79 0.15 75); /* brand-colored text (AA on dark) */
+    --on-brand: oklch(0.17 0.028 70); /* text ON brand fills */
+    --bar-neutral: oklch(0.55 0.03 265); /* neutral data-viz bar */
+    --accent: oklch(0.65 0.19 293);
+    --positive: oklch(0.74 0.16 150);
+    --negative: oklch(0.67 0.19 25);
+    --info: oklch(0.71 0.13 240);
+    --ring: color-mix(in oklch, var(--brand) 65%, transparent);
+
+    /* ---- Tier palette (data visualization) ---- */
+    --tier-1: oklch(0.75 0.14 75);
+    --tier-2: oklch(0.68 0.17 300);
+    --tier-3: oklch(0.72 0.13 200);
+    --tier-4: oklch(0.72 0.15 150);
+    --tier-5: oklch(0.7 0.16 25);
+    --tier-6: oklch(0.7 0.15 265);
+
+    /* ---- Gradients ---- */
+    --grad-brand: linear-gradient(
+      135deg,
+      oklch(0.85 0.14 88),
+      oklch(0.74 0.15 66)
+    );
+    --grad-card: linear-gradient(
+      180deg,
+      color-mix(in oklch, white 5%, transparent),
+      transparent 42%
+    );
+
+    /* ---- Radii ---- */
+    --r-xs: 6px;
+    --r-sm: 10px;
+    --r-md: 14px;
+    --r-lg: 20px;
+    --r-xl: 26px;
+    --r-full: 999px;
+
+    /* ---- Elevation ---- */
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.24);
+    --shadow-2: 0 10px 30px -14px rgb(0 0 0 / 0.55),
+      0 2px 8px -4px rgb(0 0 0 / 0.35);
+    --shadow-3: 0 30px 60px -28px rgb(0 0 0 / 0.6),
+      0 8px 22px -14px rgb(0 0 0 / 0.45);
+
+    /* ---- Motion ---- */
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-1: 150ms;
+    --dur-2: 260ms;
+    --dur-3: 460ms;
+
+    /* ---- Layers / z-index scale ---- */
+    --z-sticky: 20;
+    --z-toast: 60;
+
+    /* ---- Background grid ---- */
+    --bg-grid-opacity: 0.045;
+  }
+
+  :root[data-theme='light'] {
+    color-scheme: light;
+
+    --bg: oklch(0.968 0.006 250);
+    --bg-elevated: oklch(0.995 0.002 250);
+    --surface: oklch(0.995 0.002 250);
+    --surface-2: oklch(0.955 0.007 250);
+    --surface-3: oklch(0.925 0.009 250);
+    --glass: color-mix(in oklch, var(--bg-elevated) 82%, transparent);
+
+    --text: oklch(0.22 0.02 262); /* ≈ slate-900 */
+    --text-2: oklch(0.44 0.02 262); /* ≈ slate-600 (AA on light bg) */
+    --text-3: oklch(0.55 0.018 262);
+
+    --border: color-mix(in oklch, oklch(0.22 0.02 262) 13%, transparent);
+    --border-strong: color-mix(in oklch, oklch(0.22 0.02 262) 24%, transparent);
+
+    --brand: oklch(0.66 0.14 68);
+    --brand-strong: oklch(0.58 0.14 64);
+    --brand-ink: oklch(0.53 0.14 60); /* AA on white */
+    --on-brand: oklch(0.2 0.028 65); /* dark text on amber fills */
+    --bar-neutral: oklch(0.78 0.02 265);
+    --positive: oklch(0.52 0.14 155);
+    --negative: oklch(0.55 0.2 25);
+    --info: oklch(0.5 0.14 245);
+
+    --tier-1: oklch(0.62 0.14 70);
+    --tier-2: oklch(0.55 0.19 300);
+    --tier-3: oklch(0.56 0.13 210);
+    --tier-4: oklch(0.55 0.14 155);
+    --tier-5: oklch(0.56 0.16 25);
+    --tier-6: oklch(0.53 0.16 265);
+
+    --bar-neutral: oklch(0.78 0.02 265);
+
+    --grad-brand: linear-gradient(
+      135deg,
+      oklch(0.8 0.14 80),
+      oklch(0.68 0.15 60)
+    );
+
+    --shadow-1: 0 1px 2px oklch(0.2 0.02 262 / 0.06);
+    --shadow-2: 0 14px 34px -22px oklch(0.2 0.02 262 / 0.35),
+      0 2px 6px -4px oklch(0.2 0.02 262 / 0.18);
+    --shadow-3: 0 32px 64px -32px oklch(0.2 0.02 262 / 0.4),
+      0 10px 24px -16px oklch(0.2 0.02 262 / 0.24);
+
+    --bg-grid-opacity: 0.03;
+  }
 }

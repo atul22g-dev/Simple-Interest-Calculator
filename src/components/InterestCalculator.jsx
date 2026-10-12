@@ -1,13 +1,193 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './InterestCalculator.css';
-// Import All Functions 
+// Import All Functions
 import { parseIndianFormat, formatIndianAmount } from '../func/InterestCalculatorFunc';
 
+/* ------------------------------------------------------------------ */
+/* Icons (inline SVG — no icon dependency)                            */
+/* ------------------------------------------------------------------ */
+const svgBase = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+  focusable: 'false',
+};
+
+const ICONS = {
+  plus: (
+    <svg {...svgBase}>
+      <path d="M12 5.5v13M5.5 12h13" />
+    </svg>
+  ),
+  reset: (
+    <svg {...svgBase}>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  ),
+  close: (
+    <svg {...svgBase}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  ),
+  arrow: (
+    <svg {...svgBase}>
+      <path d="M5 12h13M12.5 6.5 19 12l-6.5 5.5" />
+    </svg>
+  ),
+  chevron: (
+    <svg {...svgBase}>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  ),
+  copy: (
+    <svg {...svgBase}>
+      <rect x="8.5" y="8.5" width="12.5" height="12.5" rx="2.4" />
+      <path d="M4.5 15.5A2.5 2.5 0 0 1 2 13V5a2.5 2.5 0 0 1 2.5-2.5H13a2.5 2.5 0 0 1 2.5 2.5v1" />
+    </svg>
+  ),
+  check: (
+    <svg {...svgBase}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.2 12.4 2.6 2.6 5-5.6" />
+    </svg>
+  ),
+  alert: (
+    <svg {...svgBase}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.4v5.2M12 16.3h.01" />
+    </svg>
+  ),
+  info: (
+    <svg {...svgBase}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11.2v5M12 7.8h.01" />
+    </svg>
+  ),
+  trend: (
+    <svg {...svgBase}>
+      <path d="M22 7.5 13.5 16l-4-4L2 17.5" />
+      <path d="M16 7.5h6v6" />
+    </svg>
+  ),
+  wallet: (
+    <svg {...svgBase}>
+      <rect x="2.5" y="6" width="19" height="13" rx="2.6" />
+      <path d="M2.5 10.4h19M6.5 15h4" />
+    </svg>
+  ),
+  gem: (
+    <svg {...svgBase}>
+      <path d="M6.5 3h11l3.7 5.6L12 21 2.8 8.6Z" />
+      <path d="M11 3 8 8.6 12 21l4-12.4L13 3M2.8 8.6h18.4" />
+    </svg>
+  ),
+};
+
+/* ------------------------------------------------------------------ */
+/* Localisation helpers                                                */
+/* ------------------------------------------------------------------ */
+const TENURE_LABELS = {
+  day: ['day', 'days'],
+  month: ['month', 'months'],
+  quarter: ['quarter', 'quarters'],
+  year: ['year', 'years'],
+};
+
+const formatTenure = (timePeriod) => {
+  if (!timePeriod) return '1 year';
+  const pair = TENURE_LABELS[timePeriod.unit] || TENURE_LABELS.year;
+  const count = parseFloat(timePeriod.value);
+  const label = count === 1 ? pair[0] : pair[1];
+  return `${timePeriod.value} ${label}`;
+};
+
+const round2 = (value) => Math.round((value || 0) * 100) / 100;
+
+/* Big headline figures read better as whole rupees, Indian digit grouping */
+const formatStat = (value) =>
+  Math.round(Number.isFinite(value) ? value : 0).toLocaleString('en-IN');
+
+/* ------------------------------------------------------------------ */
+/* Animated counter (rAF, respects prefers-reduced-motion)             */
+/* ------------------------------------------------------------------ */
+function useAnimatedNumber(target) {
+  const initial = Number.isFinite(target) ? target : 0;
+  const [display, setDisplay] = useState(initial);
+  const fromRef = useRef(initial);
+
+  useEffect(() => {
+    const to = Number.isFinite(target) ? target : 0;
+    const from = Number.isFinite(fromRef.current) ? fromRef.current : 0;
+
+    if (from === to) {
+      setDisplay(to);
+      return undefined;
+    }
+
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      fromRef.current = to;
+      setDisplay(to);
+      return undefined;
+    }
+
+    const duration = 700;
+    const start = performance.now();
+    let frame;
+
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const value = from + (to - from) * eased;
+      fromRef.current = value;
+      setDisplay(value);
+      if (t < 1) {
+        frame = requestAnimationFrame(tick);
+      } else {
+        fromRef.current = to;
+        setDisplay(to);
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target]);
+
+  return display;
+}
+
+/* ------------------------------------------------------------------ */
+/* Options                                                             */
+/* ------------------------------------------------------------------ */
+const COMPOUND_OPTIONS = [
+  { value: 'annually', label: 'Annually' },
+  { value: 'semi-annually', label: 'Half-yearly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'monthly', label: 'Monthly' },
+];
+
+const UNIT_OPTIONS = [
+  { value: 'day', label: 'Days' },
+  { value: 'month', label: 'Months' },
+  { value: 'quarter', label: 'Quarters' },
+  { value: 'year', label: 'Years' },
+];
+
+const TOAST_LIFETIME = 4200;
+const MAX_TOASTS = 3;
 
 function InterestCalculator() {
   // Default values
   const defaultRates = useMemo(() => ['4.00', '6.25', '7.50', '7.75'], []);
-  const defaultThresholds = useMemo(() => ['100000', '500000', '500000000', 'Infinity'], []);
+  const defaultThresholds = useMemo(
+    () => ['100000', '500000', '500000000', 'Infinity'],
+    []
+  );
 
   // State variables
   const [amount, setAmount] = useState('');
@@ -15,7 +195,7 @@ function InterestCalculator() {
   const [tierThresholds, setTierThresholds] = useState(defaultThresholds);
   const [timePeriod, setTimePeriod] = useState({
     value: '1',
-    unit: 'year'
+    unit: 'year',
   });
   const [isCompound, setIsCompound] = useState(false);
   const [compoundFrequency, setCompoundFrequency] = useState('annually');
@@ -24,6 +204,36 @@ function InterestCalculator() {
   const [showHistory, setShowHistory] = useState(false);
   const [showSavedCalculations, setShowSavedCalculations] = useState(false);
 
+  // Toast notifications (replace blocking alert() calls)
+  const [toasts, setToasts] = useState([]);
+  const toastTimers = useRef([]);
+
+  useEffect(
+    () => () => {
+      toastTimers.current.forEach((timer) => clearTimeout(timer));
+      toastTimers.current = [];
+    },
+    []
+  );
+
+  const dismissToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  }, []);
+
+  const pushToast = useCallback(
+    (message, tone = 'info') => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setToasts((prev) => [...prev, { id, message, tone }].slice(-MAX_TOASTS));
+
+      const timer = setTimeout(() => {
+        setToasts((prev) => prev.filter((toast) => toast.id !== id));
+        toastTimers.current = toastTimers.current.filter((entry) => entry !== timer);
+      }, TOAST_LIFETIME);
+      toastTimers.current.push(timer);
+    },
+    []
+  );
+
   // Generate tier names based on thresholds
   const getTierNames = (thresholds) => {
     const names = [];
@@ -31,27 +241,30 @@ function InterestCalculator() {
       if (i === 0) {
         names.push(`Upto ₹${formatAmount(thresholds[i])}`);
       } else if (thresholds[i] === 'Infinity') {
-        names.push(`Above ₹${formatAmount(thresholds[i-1])}`);
+        names.push(`Above ₹${formatAmount(thresholds[i - 1])}`);
       } else {
-        names.push(`Above ₹${formatAmount(thresholds[i-1])} upto ₹${formatAmount(thresholds[i])}`);
+        names.push(
+          `Above ₹${formatAmount(thresholds[i - 1])} upto ₹${formatAmount(thresholds[i])}`
+        );
       }
     }
     return names;
   };
 
   // Format amount for display
-  const formatAmount = (amount) => {
+  const formatAmount = (value) => {
     // Use our utility function
-    return formatIndianAmount(amount, 'text').replace('₹', '');
+    return formatIndianAmount(value, 'text').replace('₹', '');
   };
 
   // Get current tiers based on thresholds
   const getCurrentTiers = () => {
+    const names = getTierNames(tierThresholds);
     return tierThresholds.map((threshold, index) => {
       const value = threshold === 'Infinity' ? Infinity : parseFloat(threshold);
       return {
         maxAmount: value,
-        name: getTierNames(tierThresholds)[index]
+        name: names[index],
       };
     });
   };
@@ -144,12 +357,13 @@ function InterestCalculator() {
   const addTier = () => {
     // Don't add if we already have a lot of tiers
     if (tierThresholds.length >= 10) {
-      alert('Maximum 10 tiers allowed');
+      pushToast('Maximum of 10 rate slabs allowed', 'error');
       return;
     }
 
     // Get the last non-infinity threshold and suggest a higher value
-    const lastThresholdValue = parseFloat(tierThresholds[tierThresholds.length - 2]) || 100000;
+    const lastThresholdValue =
+      parseFloat(tierThresholds[tierThresholds.length - 2]) || 100000;
     const suggestedNewThreshold = lastThresholdValue * 2;
 
     // Insert the new threshold before the Infinity threshold
@@ -170,13 +384,13 @@ function InterestCalculator() {
   const removeTier = (index) => {
     // Don't allow removing if we only have 2 tiers (1 regular + Infinity)
     if (tierThresholds.length <= 2) {
-      alert('Minimum 1 tier required');
+      pushToast('At least one rate slab is required', 'error');
       return;
     }
 
     // Don't allow removing the Infinity tier
     if (index === tierThresholds.length - 1) {
-      alert('Cannot remove the highest tier');
+      pushToast('The top slab has no upper limit — it cannot be removed', 'error');
       return;
     }
 
@@ -201,7 +415,7 @@ function InterestCalculator() {
     localStorage.setItem('interestRates', JSON.stringify(defaultRates));
     localStorage.setItem('tierThresholds', JSON.stringify(defaultThresholds));
 
-    alert('Reset to default interest rates and tiers');
+    pushToast('Rates and slabs reset to defaults', 'success');
   };
 
   const calculateInterest = () => {
@@ -209,21 +423,21 @@ function InterestCalculator() {
     const depositAmount = parseIndianFormat(amount);
 
     if (isNaN(depositAmount) || depositAmount <= 0) {
-      alert('Please enter a valid amount');
+      pushToast('Enter a valid principal amount to calculate', 'error');
       return;
     }
 
     // Validate all interest rates
-    const rates = interestRates.map(rate => parseFloat(rate));
-    if (rates.some(rate => isNaN(rate) || rate < 0)) {
-      alert('Please enter valid interest rates');
+    const rates = interestRates.map((rate) => parseFloat(rate));
+    if (rates.some((rate) => isNaN(rate) || rate < 0)) {
+      pushToast('Every slab needs a valid interest rate', 'error');
       return;
     }
 
     // Validate time period
     const periodValue = parseFloat(timePeriod.value);
     if (isNaN(periodValue) || periodValue <= 0) {
-      alert('Please enter a valid time period');
+      pushToast('Enter a valid time period', 'error');
       return;
     }
 
@@ -239,7 +453,7 @@ function InterestCalculator() {
       for (let i = 0; i < currentTiers.length; i++) {
         const tier = currentTiers[i];
         const rate = rates[i];
-        const prevTierMax = i === 0 ? 0 : currentTiers[i-1].maxAmount;
+        const prevTierMax = i === 0 ? 0 : currentTiers[i - 1].maxAmount;
 
         // Calculate the amount in this tier
         const tierMax = tier.maxAmount;
@@ -286,7 +500,10 @@ function InterestCalculator() {
 
         // Calculate compound interest: P(1 + r/n)^(nt) - P
         const rateDecimal = rate / 100;
-        const compoundFactor = Math.pow(1 + (rateDecimal / compoundsPerYear), compoundsPerYear * timeInYears);
+        const compoundFactor = Math.pow(
+          1 + rateDecimal / compoundsPerYear,
+          compoundsPerYear * timeInYears
+        );
         const finalAmount = amountInTier * compoundFactor;
         const tierInterest = finalAmount - amountInTier;
 
@@ -297,7 +514,7 @@ function InterestCalculator() {
           tier: tier.name,
           amount: amountInTier,
           rate: rate,
-          interest: tierInterest
+          interest: tierInterest,
         });
 
         // Reduce remaining amount
@@ -310,7 +527,7 @@ function InterestCalculator() {
       for (let i = 0; i < currentTiers.length; i++) {
         const tier = currentTiers[i];
         const rate = rates[i];
-        const prevTierMax = i === 0 ? 0 : currentTiers[i-1].maxAmount;
+        const prevTierMax = i === 0 ? 0 : currentTiers[i - 1].maxAmount;
 
         // Calculate the amount in this tier
         const tierMax = tier.maxAmount;
@@ -347,7 +564,7 @@ function InterestCalculator() {
           tier: tier.name,
           amount: amountInTier,
           rate: rate,
-          interest: periodInterest
+          interest: periodInterest,
         });
 
         // Reduce remaining amount
@@ -380,10 +597,12 @@ function InterestCalculator() {
 
     // Only annualize if the period is not 1 year
     const annualizedEffectiveRate =
-      (timePeriod.unit === 'year' && parseFloat(timePeriod.value) === 1) ?
-        effectiveRate : effectiveRate * annualizationFactor;
+      timePeriod.unit === 'year' && parseFloat(timePeriod.value) === 1
+        ? effectiveRate
+        : effectiveRate * annualizationFactor;
 
     const newResult = {
+      seq: Date.now(),
       depositAmount,
       tierBreakdown,
       totalInterest,
@@ -392,9 +611,9 @@ function InterestCalculator() {
       date: new Date().toLocaleString(),
       rates: [...interestRates], // Save the rates used for this calculation
       thresholds: [...tierThresholds], // Save the thresholds used for this calculation
-      timePeriod: {...timePeriod}, // Save the time period used for this calculation
+      timePeriod: { ...timePeriod }, // Save the time period used for this calculation
       isCompound, // Save whether compound interest was used
-      compoundFrequency: isCompound ? compoundFrequency : null // Save compound frequency if applicable
+      compoundFrequency: isCompound ? compoundFrequency : null, // Save compound frequency if applicable
     };
 
     setResult(newResult);
@@ -408,6 +627,7 @@ function InterestCalculator() {
   const clearHistory = () => {
     setSavedCalculations([]);
     localStorage.removeItem('calculations');
+    pushToast('Saved calculations cleared', 'success');
   };
 
   // Apply rates, amount, thresholds, time period, and interest type from a previous calculation
@@ -442,321 +662,585 @@ function InterestCalculator() {
     // Hide history panel after selection
     setShowHistory(false);
     setShowSavedCalculations(false);
+    pushToast('Saved values loaded into the form', 'success');
+  };
+
+  const copyResult = async () => {
+    if (!result) return;
+    const summary = [
+      `Principal ₹${formatIndianAmount(result.depositAmount)}`,
+      `${result.isCompound ? 'Compound' : 'Simple'} interest over ${formatTenure(
+        result.timePeriod
+      )}`,
+      `Earned ₹${formatIndianAmount(result.totalInterest)}`,
+      `Total ₹${formatIndianAmount(result.totalAmount)}`,
+      `Effective rate ${round2(result.effectiveRate)}% p.a.`,
+    ].join(' · ');
+
+    try {
+      await navigator.clipboard.writeText(summary);
+      pushToast('Result summary copied', 'success');
+    } catch {
+      pushToast('Clipboard is not available in this browser', 'error');
+    }
+  };
+
+  /* ---------------- Derived display values ---------------- */
+  const parsedAmount = parseIndianFormat(amount);
+  const principalEcho =
+    amount && !isNaN(parsedAmount) && parsedAmount > 0
+      ? parsedAmount >= 100000
+        ? `≈ ${formatIndianAmount(parsedAmount, 'text')}`
+        : `≈ ₹${formatIndianAmount(parsedAmount)}`
+      : 'Enter an amount';
+
+  const animatedInterest = useAnimatedNumber(result ? result.totalInterest : 0);
+  const animatedPrincipal = useAnimatedNumber(result ? result.depositAmount : 0);
+  const animatedTotal = useAnimatedNumber(result ? result.totalAmount : 0);
+
+  const principalPct = result
+    ? (result.depositAmount / result.totalAmount) * 100
+    : 100;
+  const interestPct = result ? 100 - principalPct : 0;
+
+  const toastIcons = {
+    success: ICONS.check,
+    error: ICONS.alert,
+    info: ICONS.info,
   };
 
   return (
     <div className="calculator-container">
-      {/* <h2>Interest Calculator</h2> */}
+      <form
+        className="card form-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          calculateInterest();
+        }}
+        noValidate
+      >
+        <div className="card-head">
+          <div className="card-head-text">
+            <span className="eyebrow">Parameters</span>
+            <h2>Set up your calculation</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={resetToDefaults}
+            aria-label="Reset rates and slabs to defaults"
+            title="Reset rates and slabs"
+          >
+            {ICONS.reset}
+          </button>
+        </div>
 
-      <div className="calculator-form">
-        <div className="form-row">
-          <label htmlFor="amount">Principal Amount (₹{amount || '0'})</label>
-          <div className="input-with-icon">
-            <span className="input-icon">₹</span>
+        <div className="field-block">
+          <div className="field-head">
+            <label htmlFor="amount">Principal amount</label>
+            <span className="field-echo">{principalEcho}</span>
+          </div>
+          <div className="input-shell input-shell-lg">
+            <span className="affix affix-start" aria-hidden="true">
+              ₹
+            </span>
             <input
               type="text"
+              inputMode="decimal"
+              autoComplete="off"
               id="amount"
               value={amount}
-              onChange={(e) => updateAmount(e.target.value)}
-              placeholder="Enter amount"
+              onChange={(event) => updateAmount(event.target.value)}
+              placeholder="e.g. 500000"
             />
           </div>
         </div>
 
-        <div className="form-row">
-          <label>Annual Rate</label>
-          <div className="rate-inputs-container">
+        <div className="field-block">
+          <span className="field-label" id="interest-type-label">
+            Interest type
+          </span>
+          <div
+            className="segmented"
+            data-count="2"
+            role="radiogroup"
+            aria-labelledby="interest-type-label"
+          >
+            <label className="seg">
+              <input
+                type="radio"
+                name="interest-type"
+                value="simple"
+                checked={!isCompound}
+                onChange={() => setIsCompound(false)}
+              />
+              <span>Simple</span>
+            </label>
+            <label className="seg">
+              <input
+                type="radio"
+                name="interest-type"
+                value="compound"
+                checked={isCompound}
+                onChange={() => setIsCompound(true)}
+              />
+              <span>Compound</span>
+            </label>
+            <span className="seg-indicator" aria-hidden="true" />
+          </div>
+          <p className="field-hint">
+            {isCompound
+              ? 'Interest earns interest on top of itself across the tenure.'
+              : 'Interest is paid on the principal only — straightforward and predictable.'}
+          </p>
+        </div>
+
+        <div className="field-block">
+          <div className="field-head">
+            <span className="field-label" id="rate-slabs-label">
+              Rate slabs
+            </span>
+            <span className="field-echo">{tierThresholds.length} slabs</span>
+          </div>
+
+          <ul className="tier-list" aria-labelledby="rate-slabs-label">
             {getCurrentTiers().map((tier, index) => (
-              <div key={index} className="rate-tier">
-                <div className="tier-info">
-                  <div className="tier-label">{tier.name}</div>
+              <li className="tier-row" key={index}>
+                <div className="tier-head">
+                  <span
+                    className="tier-dot"
+                    style={{
+                      backgroundColor: `var(--tier-${(index % 6) + 1})`,
+                    }}
+                    aria-hidden="true"
+                  />
+                  <span className="tier-name">{tier.name}</span>
                   {index !== tierThresholds.length - 1 && (
                     <button
+                      type="button"
+                      className="icon-btn icon-btn-quiet"
                       onClick={() => removeTier(index)}
-                      className="remove-tier-btn"
-                      title="Remove this tier"
+                      title="Remove this slab"
+                      aria-label={`Remove slab ${tier.name}`}
                     >
-                      ×
+                      {ICONS.close}
                     </button>
                   )}
                 </div>
+
                 <div className="tier-inputs">
-                  {index !== tierThresholds.length - 1 && (
-                    <div className="threshold-input">
+                  {index !== tierThresholds.length - 1 ? (
+                    <div className="input-shell">
+                      <span className="affix affix-start" aria-hidden="true">
+                        ₹
+                      </span>
+                      <label className="visually-hidden" htmlFor={`threshold-${index}`}>
+                        Upper limit for slab {index + 1}
+                      </label>
                       <input
+                        id={`threshold-${index}`}
                         type="text"
+                        inputMode="numeric"
                         value={tierThresholds[index]}
-                        onChange={(e) => updateTierThreshold(index, e.target.value)}
-                        placeholder="Threshold"
+                        onChange={(event) =>
+                          updateTierThreshold(index, event.target.value)
+                        }
+                        placeholder="Upper limit"
                       />
                     </div>
+                  ) : (
+                    <div className="tier-unlimited">
+                      <span>No upper limit</span>
+                    </div>
                   )}
-                  <div className="input-with-icon">
+                  <div className="input-shell input-shell-rate">
+                    <label className="visually-hidden" htmlFor={`rate-${index}`}>
+                      Interest rate for slab {index + 1}
+                    </label>
                     <input
+                      id={`rate-${index}`}
                       type="text"
+                      inputMode="decimal"
                       value={interestRates[index]}
-                      onChange={(e) => updateInterestRate(index, e.target.value)}
-                      step="0.01"
-                      min="0"
+                      onChange={(event) => updateInterestRate(index, event.target.value)}
+                      placeholder="Rate"
                     />
-                    <span className="input-icon-right">%</span>
+                    <span className="affix affix-end" aria-hidden="true">
+                      %
+                    </span>
                   </div>
                 </div>
-              </div>
+              </li>
             ))}
-            <div className="tier-actions">
-              <button onClick={addTier} className="small-btn add-btn" title="Add a tier">+</button>
-              <button onClick={resetToDefaults} className="small-btn reset-btn" title="Reset tiers">↺</button>
-            </div>
+          </ul>
+
+          <div className="tier-actions-row">
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={addTier}
+              disabled={tierThresholds.length >= 10}
+            >
+              {ICONS.plus}
+              <span>Add slab</span>
+            </button>
+            <button type="button" className="ghost-btn" onClick={resetToDefaults}>
+              {ICONS.reset}
+              <span>Reset</span>
+            </button>
           </div>
         </div>
 
         {isCompound && (
-          <div className="form-row">
-            <label>Compounding Frequency</label>
-            <div className="radio-group">
-              <label className="radio-label">
-                <input
-                  type="radio"
-                  name="compound-frequency"
-                  value="annually"
-                  checked={compoundFrequency === 'annually'}
-                  onChange={() => setCompoundFrequency('annually')}
-                />
-                <span>Annually</span>
-              </label>
-              <label className="radio-label">
-                <input
-                  type="radio"
-                  name="compound-frequency"
-                  value="semi-annually"
-                  checked={compoundFrequency === 'semi-annually'}
-                  onChange={() => setCompoundFrequency('semi-annually')}
-                />
-                <span>Semi-Annually</span>
-              </label>
-              <label className="radio-label">
-                <input
-                  type="radio"
-                  name="compound-frequency"
-                  value="quarterly"
-                  checked={compoundFrequency === 'quarterly'}
-                  onChange={() => setCompoundFrequency('quarterly')}
-                />
-                <span>Quarterly</span>
-              </label>
-              <label className="radio-label">
-                <input
-                  type="radio"
-                  name="compound-frequency"
-                  value="monthly"
-                  checked={compoundFrequency === 'monthly'}
-                  onChange={() => setCompoundFrequency('monthly')}
-                />
-                <span>Monthly</span>
-              </label>
+          <div className="field-block field-block-enter">
+            <span className="field-label" id="frequency-label">
+              Compounding frequency
+            </span>
+            <div
+              className="segmented segmented-sm"
+              data-count="4"
+              role="radiogroup"
+              aria-labelledby="frequency-label"
+            >
+              {COMPOUND_OPTIONS.map((option) => (
+                <label className="seg" key={option.value}>
+                  <input
+                    type="radio"
+                    name="compound-frequency"
+                    value={option.value}
+                    checked={compoundFrequency === option.value}
+                    onChange={() => setCompoundFrequency(option.value)}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+              <span className="seg-indicator" aria-hidden="true" />
             </div>
           </div>
         )}
 
-        <div className="form-row">
-          <label>Period Unit</label>
-          <div className="radio-group">
-            <label className="radio-label">
+        <div className="field-block">
+          <span className="field-label" id="period-label">
+            Time period
+          </span>
+          <div className="tenure-row">
+            <div className="input-shell input-shell-period">
+              <label className="visually-hidden" htmlFor="period-value">
+                Period value
+              </label>
               <input
-                type="radio"
-                name="period-unit"
-                value="day"
-                checked={timePeriod.unit === 'day'}
-                onChange={() => updateTimePeriodUnit('day')}
+                id="period-value"
+                type="text"
+                inputMode="decimal"
+                value={timePeriod.value}
+                onChange={(event) => updateTimePeriodValue(event.target.value)}
               />
-              <span>Days</span>
-            </label>
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="period-unit"
-                value="month"
-                checked={timePeriod.unit === 'month'}
-                onChange={() => updateTimePeriodUnit('month')}
-              />
-              <span>Months</span>
-            </label>
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="period-unit"
-                value="quarter"
-                checked={timePeriod.unit === 'quarter'}
-                onChange={() => updateTimePeriodUnit('quarter')}
-              />
-              <span>Quarters</span>
-            </label>
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="period-unit"
-                value="year"
-                checked={timePeriod.unit === 'year'}
-                onChange={() => updateTimePeriodUnit('year')}
-              />
-              <span>Years</span>
-            </label>
+              <span className="affix affix-end" aria-hidden="true">
+                {timePeriod.unit === 'year'
+                  ? 'yr'
+                  : timePeriod.unit === 'month'
+                    ? 'mo'
+                    : timePeriod.unit === 'quarter'
+                      ? 'qtr'
+                      : 'day'}
+              </span>
+            </div>
+            <div
+              className="segmented segmented-sm"
+              data-count="4"
+              role="radiogroup"
+              aria-label="Period unit"
+            >
+              {UNIT_OPTIONS.map((option) => (
+                <label className="seg" key={option.value}>
+                  <input
+                    type="radio"
+                    name="period-unit"
+                    value={option.value}
+                    checked={timePeriod.unit === option.value}
+                    onChange={() => updateTimePeriodUnit(option.value)}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+              <span className="seg-indicator" aria-hidden="true" />
+            </div>
           </div>
         </div>
 
-        <div className="form-row">
-          <label htmlFor="period-value">Period Value</label>
-          <input
-            type="text"
-            id="period-value"
-            value={timePeriod.value}
-            onChange={(e) => updateTimePeriodValue(e.target.value)}
-            min="0.1"
-            step="0.1"
-          />
-        </div>
-
-        <button onClick={calculateInterest} className="calculate-btn">Calculate</button>
-      </div>
+        <button type="submit" className="cta-btn">
+          <span>Calculate returns</span>
+          {ICONS.arrow}
+        </button>
+      </form>
 
       {result && (
-        <div className="result-container">
-          <div className="result-row">
-            <div className="result-label">Interest Earned</div>
-            <div className="result-value">₹{formatIndianAmount(result.totalInterest)}</div>
-          </div>
-          <div className="result-row">
-            <div className="result-label">Principal Amount</div>
-            <div className="result-value">₹{formatIndianAmount(result.depositAmount)}</div>
-          </div>
-          <div className="result-row total">
-            <div className="result-label">Total Value</div>
-            <div className="result-value">₹{formatIndianAmount(result.totalAmount)}</div>
+        <section className="card result-container" aria-label="Calculation result">
+          <div className="card-head">
+            <div className="card-head-text">
+              <span className="eyebrow">Result</span>
+              <h2>Your returns</h2>
+            </div>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={copyResult}
+              aria-label="Copy result summary"
+              title="Copy summary"
+            >
+              {ICONS.copy}
+            </button>
           </div>
 
-          <button onClick={() => setShowHistory(!showHistory)} className="view-details-btn">
-            {showHistory ? 'Hide Details' : 'View Details'}
+          <div className="stat-grid" key={result.seq}>
+            <div className="stat stat-positive">
+              <span className="stat-icon">{ICONS.trend}</span>
+              <span className="stat-label">Interest earned</span>
+              <span className="stat-value">₹{formatStat(animatedInterest)}</span>
+              <span className="stat-sub">{round2(result.effectiveRate)}% p.a. effective</span>
+            </div>
+            <div className="stat">
+              <span className="stat-icon">{ICONS.wallet}</span>
+              <span className="stat-label">Principal</span>
+              <span className="stat-value">₹{formatStat(animatedPrincipal)}</span>
+              <span className="stat-sub">{formatTenure(result.timePeriod)}</span>
+            </div>
+            <div className="stat stat-brand stat-total">
+              <span className="stat-icon">{ICONS.gem}</span>
+              <span className="stat-label">Total value</span>
+              <span className="stat-value">₹{formatStat(animatedTotal)}</span>
+              <span className="stat-sub">
+                {result.isCompound ? 'Compound' : 'Simple'} interest
+              </span>
+            </div>
+          </div>
+
+          <div className="growth" key={`growth-${result.seq}`}>
+            <div
+              className="growth-bar"
+              role="img"
+              aria-label={`Principal is ${round2(principalPct)} percent, interest is ${round2(
+                interestPct
+              )} percent of the total value`}
+            >
+              <span className="growth-seg growth-principal" style={{ width: `${principalPct}%` }} />
+              <span className="growth-seg growth-interest" style={{ width: `${interestPct}%` }} />
+            </div>
+            <div className="growth-legend">
+              <span>
+                <i className="dot dot-principal" />
+                Principal · {round2(principalPct)}%
+              </span>
+              <span>
+                <i className="dot dot-interest" />
+                Interest · {round2(interestPct)}%
+              </span>
+            </div>
+          </div>
+
+          <p className="visually-hidden" role="status">
+            Calculation complete. Interest ₹{formatIndianAmount(result.totalInterest)},
+            total value ₹{formatIndianAmount(result.totalAmount)}.
+          </p>
+
+          <button
+            type="button"
+            className="details-toggle"
+            onClick={() => setShowHistory(!showHistory)}
+            aria-expanded={showHistory}
+          >
+            <span>{showHistory ? 'Hide details' : 'View details'}</span>
+            <span className={`details-chevron${showHistory ? ' is-open' : ''}`} aria-hidden="true">
+              {ICONS.chevron}
+            </span>
           </button>
 
           {showHistory && (
             <div className="result-details">
-              <div className="details-tabs">
+              <div className="tabs" role="tablist" aria-label="Result details">
                 <button
-                  className={`tab-btn ${!showSavedCalculations ? 'active' : ''}`}
+                  type="button"
+                  role="tab"
+                  className={`tab-btn${!showSavedCalculations ? ' active' : ''}`}
+                  aria-selected={!showSavedCalculations}
                   onClick={() => setShowSavedCalculations(false)}
                 >
-                  Current Calculation
+                  Current calculation
                 </button>
                 <button
-                  className={`tab-btn ${showSavedCalculations ? 'active' : ''}`}
+                  type="button"
+                  role="tab"
+                  className={`tab-btn${showSavedCalculations ? ' active' : ''}`}
+                  aria-selected={showSavedCalculations}
                   onClick={() => setShowSavedCalculations(true)}
                 >
-                  Saved Calculations
+                  Saved ({savedCalculations.length})
                 </button>
               </div>
 
               {!showSavedCalculations ? (
-                <>
-                  <div className="details-section">
-                    <h4>Calculation Details</h4>
+                <div className="details-stack">
+                  <dl className="detail-list">
                     <div className="detail-row">
-                      <span>Interest Type:</span>
-                      <span>{result.isCompound ? 'Compound Interest' : 'Simple Interest'}</span>
+                      <dt>Interest type</dt>
+                      <dd>{result.isCompound ? 'Compound interest' : 'Simple interest'}</dd>
                     </div>
-                    {result.isCompound && (
+                    {result.isCompound && result.compoundFrequency && (
                       <div className="detail-row">
-                        <span>Compounding Frequency:</span>
-                        <span>{result.compoundFrequency}</span>
+                        <dt>Compounding</dt>
+                        <dd className="capitalize">{result.compoundFrequency}</dd>
                       </div>
                     )}
                     <div className="detail-row">
-                      <span>Time Period:</span>
-                      <span>{result.timePeriod.value} {result.timePeriod.unit}(s)</span>
+                      <dt>Time period</dt>
+                      <dd>{formatTenure(result.timePeriod)}</dd>
                     </div>
                     <div className="detail-row">
-                      <span>Effective Annual Rate:</span>
-                      <span>{Math.round(result.effectiveRate * 100) / 100}%</span>
+                      <dt>Effective annual rate</dt>
+                      <dd>{round2(result.effectiveRate)}%</dd>
                     </div>
-                  </div>
+                  </dl>
 
                   <div className="details-section">
-                    <h4>Interest Breakdown</h4>
-                    <table className="breakdown-table">
-                      <thead>
-                        <tr>
-                          <th>Tier</th>
-                          <th>Amount (₹)</th>
-                          <th>Rate (%)</th>
-                          <th>Interest (₹)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <div className="section-title">
+                      <h3>Interest breakdown</h3>
+                      <div className="tier-stack" aria-hidden="true">
                         {result.tierBreakdown.map((tier, index) => (
-                          <tr key={index}>
-                            <td>{tier.tier}</td>
-                            <td>₹{formatIndianAmount(tier.amount)}</td>
-                            <td>{tier.rate}%</td>
-                            <td>₹{formatIndianAmount(tier.interest)}</td>
-                          </tr>
+                          <span
+                            key={index}
+                            className="tier-stack-seg"
+                            title={tier.tier}
+                            style={{
+                              width: `${(tier.amount / result.depositAmount) * 100}%`,
+                              backgroundColor: `var(--tier-${(index % 6) + 1})`,
+                            }}
+                          />
                         ))}
-                      </tbody>
-                    </table>
+                      </div>
+                    </div>
+
+                    <div className="table-scroll">
+                      <table className="breakdown-table">
+                        <caption className="visually-hidden">
+                          Principal and interest earned per rate slab
+                        </caption>
+                        <thead>
+                          <tr>
+                            <th scope="col">Slab</th>
+                            <th scope="col" className="num">
+                              Amount
+                            </th>
+                            <th scope="col" className="num">
+                              Rate
+                            </th>
+                            <th scope="col" className="num">
+                              Interest
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {result.tierBreakdown.map((tier, index) => (
+                            <tr key={index}>
+                              <th scope="row" className="cell-slab">
+                                <span
+                                  className="tier-dot"
+                                  style={{
+                                    backgroundColor: `var(--tier-${(index % 6) + 1})`,
+                                  }}
+                                  aria-hidden="true"
+                                />
+                                <span className="cell-slab-text">{tier.tier}</span>
+                              </th>
+                              <td className="num">₹{formatStat(tier.amount)}</td>
+                              <td className="num">{tier.rate}%</td>
+                              <td className="num cell-interest">
+                                +₹{formatStat(tier.interest)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </>
+                </div>
               ) : (
                 <div className="saved-calculations">
                   <div className="saved-header">
-                    <h4>Saved Calculations</h4>
+                    <h3>Saved calculations</h3>
                     {savedCalculations.length > 0 && (
-                      <button onClick={clearHistory} className="clear-history-btn">
-                        Clear History
+                      <button type="button" className="ghost-btn ghost-btn-danger" onClick={clearHistory}>
+                        {ICONS.close}
+                        <span>Clear history</span>
                       </button>
                     )}
                   </div>
 
                   {savedCalculations.length === 0 ? (
-                    <p className="no-history">No saved calculations yet.</p>
+                    <p className="empty-state">
+                      No saved calculations yet — run one and it lands here.
+                    </p>
                   ) : (
-                    <div className="history-list">
+                    <ul className="history-list">
                       {savedCalculations.map((calc, index) => (
-                        <div key={index} className="history-item">
-                          <div className="history-item-header">
+                        <li key={index} className="history-item">
+                          <div className="history-item-top">
+                            <span className="history-amount">
+                              ₹{formatIndianAmount(calc.depositAmount)}
+                            </span>
                             <span className="history-date">{calc.date}</span>
-                            <span className="history-amount">₹{formatIndianAmount(calc.depositAmount)}</span>
                           </div>
-                          <div className="history-item-details">
-                            <div className="detail-row">
-                              <span>Time Period:</span>
-                              <span>{calc.timePeriod ? `${calc.timePeriod.value} ${calc.timePeriod.unit}(s)` : '1 year'}</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>Interest:</span>
-                              <span>₹{formatIndianAmount(calc.totalInterest)} ({Math.round(calc.effectiveRate * 100) / 100}%)</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>Total:</span>
-                              <span>₹{formatIndianAmount(calc.totalAmount)}</span>
-                            </div>
+
+                          <div className="history-chips">
+                            <span className="chip">{formatTenure(calc.timePeriod)}</span>
+                            {typeof calc.isCompound === 'boolean' && (
+                              <span className="chip chip-accent">
+                                {calc.isCompound ? 'Compound' : 'Simple'}
+                              </span>
+                            )}
+                            <span className="chip chip-positive">
+                              +₹{formatIndianAmount(calc.totalInterest)}
+                            </span>
                           </div>
-                          <button
-                            onClick={() => applyFromHistory(calc)}
-                            className="apply-history-btn"
-                          >
-                            Apply These Values
-                          </button>
-                        </div>
+
+                          <div className="history-item-bottom">
+                            <span className="history-total">
+                              ₹{formatIndianAmount(calc.totalAmount)}
+                            </span>
+                            <button
+                              type="button"
+                              className="ghost-btn"
+                              onClick={() => applyFromHistory(calc)}
+                            >
+                              <span>Apply values</span>
+                            </button>
+                          </div>
+                        </li>
                       ))}
-                    </div>
+                    </ul>
                   )}
                 </div>
               )}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-
+      <div className="toast-region" role="status" aria-live="polite">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`toast toast-${toast.tone}`}>
+            <span className="toast-icon">{toastIcons[toast.tone] || ICONS.info}</span>
+            <span className="toast-msg">{toast.message}</span>
+            <button
+              type="button"
+              className="toast-close"
+              onClick={() => dismissToast(toast.id)}
+              aria-label="Dismiss notification"
+            >
+              {ICONS.close}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
